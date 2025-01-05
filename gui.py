@@ -1,26 +1,35 @@
+import nltk
 import tkinter as tk
-from datetime_display import update_time
-from flashcard import generate_flashcards
+import random
 import time
+from fuzzywuzzy import fuzz
 import random
 from tkinter import messagebox
+from nltk.corpus import wordnet
+from nltk.tokenize import word_tokenize
+import fuzzywuzzy
+import flashcard
+from flashcard import generate_flashcards
 
 
 def display_flashcards(flashcards, text_widget):
-    """Display flashcards in the text widget."""
+    def giveran():
+        freq = ["what is", "define", "explain", "what do you mean by"]
+        return random.choice(freq)
+    
     text_widget.config(state=tk.NORMAL)
     text_widget.delete("1.0", tk.END)
 
     for keyword, explanation in flashcards.items():
+        c = giveran()
         explanation_text = ' '.join(explanation) if isinstance(explanation, list) else explanation
-        text_widget.insert(tk.END, f"Q: What is {keyword}?\n", "bold")
+        text_widget.insert(tk.END, f"Q:{c} {keyword}?\n", "bold")
         text_widget.insert(tk.END, f"A: {explanation_text}\n\n")
     
     text_widget.config(state=tk.DISABLED)
 
 
 def update_time_with_day(label, root):
-    """Continuously update the current time and day."""
     def refresh():
         current_time = time.strftime("%A, %B %d, %Y - %H:%M:%S")
         label.config(text=current_time)
@@ -29,7 +38,6 @@ def update_time_with_day(label, root):
 
 
 def open_note_popup():
-    """Open a popup for entering notes."""
     note_popup = tk.Toplevel(root)
     note_popup.title("Enter Notes")
     note_popup.geometry("1000x600")
@@ -56,7 +64,6 @@ def open_note_popup():
 
 
 def test_yourself():
-    """Test the user with flashcard questions."""
     if not hasattr(root, 'flashcards') or not root.flashcards:
         messagebox.showinfo("Info", "No flashcards available. Please add notes first.")
         return
@@ -83,16 +90,67 @@ def test_yourself():
         feedback_label = tk.Label(result_popup, text="", font=("Helvetica", 12))
         feedback_label.pack(pady=10)
 
-        def check_answer():
+        def evaluate_answer():  
             user_answer = answer_entry.get("1.0", tk.END).strip().lower()
             correct_answer = ' '.join(answer).strip().lower() if isinstance(answer, list) else answer.strip().lower()
-            feedback = "Correct!" if user_answer == correct_answer else f"Incorrect! The correct answer is: {correct_answer}"
+
+            semantic_result, semantic_message = check_answer(user_answer, correct_answer)
+            synonym_result, synonym_message = match_with_synonyms(user_answer, correct_answer)
+            fuzzy_result, fuzzy_message = fuzzy_match(user_answer, correct_answer)
+
+            if semantic_result:
+                feedback = semantic_message
+            elif synonym_result:
+                feedback = synonym_message
+            elif fuzzy_result:
+                feedback = fuzzy_message
+            else:
+                feedback = f"Incorrect! The correct answer is: {correct_answer}"
+
             feedback_label.config(text=feedback)
 
-        tk.Button(result_popup, text="Submit Answer", command=check_answer).pack(pady=10)
+        tk.Button(result_popup, text="Submit Answer", command=evaluate_answer).pack(pady=10)
         tk.Button(result_popup, text="Next Question", command=lambda: [result_popup.destroy(), show_question()]).pack(pady=10)
 
     show_question()
+
+
+def check_answer(user_answer, correct_answer):
+    try:
+        synsets = wordnet.synsets(correct_answer)
+        if synsets:
+            for synset in synsets:
+                for lemma in synset.lemmas():
+                    if lemma.name().lower() == user_answer:
+                        return True, f"Correct! The answer is indeed {correct_answer}."
+        return False, f"Incorrect! The correct answer is: {correct_answer}"
+    except Exception as e:
+        return False, f"An error occurred: {str(e)}"
+
+
+def match_with_synonyms(user_answer, correct_answer):
+    try:
+        synonyms = set()
+        synsets = wordnet.synsets(correct_answer)
+        if synsets:
+            for synset in synsets:
+                for lemma in synset.lemmas():
+                    synonyms.add(lemma.name().lower())
+        if user_answer in synonyms:
+            return True, f"Correct! The answer is indeed {correct_answer}."
+        return False, f"Incorrect! The correct answer is: {correct_answer}"
+    except Exception as e:
+        return False, f"An error occurred: {str(e)}"
+
+
+def fuzzy_match(user_answer, correct_answer):
+    try:
+        ratio = fuzz.ratio(user_answer, correct_answer)
+        if ratio > 80:
+            return True, f"Correct! The answer is indeed {correct_answer}."
+        return False, f"Incorrect! The correct answer is: {correct_answer}"
+    except Exception as e:
+        return False, f"An error occurred: {str(e)}"
 
 
 # Main Application
